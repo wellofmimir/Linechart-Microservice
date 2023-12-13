@@ -52,7 +52,7 @@ static QVector<QPointF> mergeCoordinates(const QVector<qreal> &xPoints, const QV
     return points;
 };
 
-static QVector<qreal> convertFromArrayToRealsVector(const QJsonArray & jsonArray)
+static QVector<qreal> convertFromArrayToRealsVector(const QJsonArray &jsonArray)
 {
     QVector<qreal> points;
 
