@@ -2,7 +2,10 @@
 #include <QCommandLineParser>
 #include <QCommandLineOption>
 #include <QScopedPointer>
+#include <QSettings>
 #include <QUuid>
+#include <QDebug>
+#include <QDir>
 
 #include <QtConcurrent/QtConcurrent>
 #include <QFutureInterface>
@@ -80,43 +83,36 @@ int main(int argc, char *argv[])
     commandlineParser.setApplicationDescription(QString
     {
         "Microservice for LineChart-Plotting."
-        "\nOn starting the program, specify the port (49152-65535) on which the microservice will listen for incoming HTTP-requests."
-        "\nIf the underlying webserver fails to start, programm returns exitcode -101."
     });
 
-    const QCommandLineOption portOption {{"p", "port"}, QString
-    {
-        "Set the port on which this microservice will listen for incoming HTTP-Requests."
-        "\nPort must be in the range from 49152 to 65535."
-        "\nIf port not in this range, programm returns exitcode -100."
-    }};
-
-//    const QCommandLineOption fileSavedirectoryOption {{"f", "file"}, QString
-//    {
-//        "Set the directory into which the plotted charts will be saved."
-//        "\nIf not specified, program returns exitcode -200."
-//        "\nIf a relative directory is specified, program returns exitcode -201."
-//        "\nIf the specified directory does not exist, program returns exitcode -202."
-//    }};
-
-    commandlineParser.addOption(portOption);
     commandlineParser.process(app);
 
-//    const QString fileSavedirectory {commandlineParser.value(fileSavedirectoryOption)};
-
-//    if (fileSavedirectory.isEmpty())
-//        commandlineParser.showHelp(-200);
-
-//    if (QDir::isRelativePath(fileSavedirectory))
-//        commandlineParser.showHelp(-201);
-
-//    if (!QDir{fileSavedirectory}.exists())
-//        commandlineParser.showHelp(-202);
-
-    const quint64 port {commandlineParser.value(portOption).toULongLong()};
-
-    if (port < LOWEST_PORT || port > HIGHEST_PORT)
+    if (!QFile::exists(QApplication::applicationDirPath() + QDir::separator() + "settings.ini"))
         commandlineParser.showHelp(-100);
+
+    const QSettings settings {QApplication::applicationDirPath() + QDir::separator() + "settings.ini", QSettings::Format::IniFormat, &app};
+
+    if (!settings.allKeys().contains("server/port"))
+        commandlineParser.showHelp(-101);
+
+    const quint64 port {settings.value(QString{"server/port"}).toULongLong()};
+
+    if (port > HIGHEST_PORT || port < LOWEST_PORT)
+        commandlineParser.showHelp(-102);
+
+    if (!settings.allKeys().contains("main/imagepath"))
+        commandlineParser.showHelp(-103);
+
+    static const QString imagepath {settings.value(QString{"main/imagepath"}).toString()};
+
+    if (imagepath.isEmpty())
+        commandlineParser.showHelp(-104);
+
+    if (!QFile::exists(imagepath))
+        commandlineParser.showHelp(-105);
+
+    if (QDir::isRelativePath(imagepath))
+        commandlineParser.showHelp(-106);
 
     const QScopedPointer<QHttpServer> httpServer {new QHttpServer {&app}};
 
@@ -383,14 +379,15 @@ int main(int argc, char *argv[])
             chartWidget->setLayout(gridLayout.data());
             chartWidget->resize(QSize{1024, 768});
 
-            const QString imageFilename {QUuid::createUuid().toString(QUuid::StringFormat::WithoutBraces) + ".jpg"};
-            chartWidget->grab().save(imageFilename);
+            const QString uuid {QUuid::createUuid().toString(QUuid::StringFormat::WithoutBraces)};
+            const QString imageFilename {uuid + ".png"};
+            chartWidget->grab().save(imagepath + QDir::separator() + imageFilename);
 
             return QHttpServerResponse
             {
                 QJsonObject
                 {
-                    {"Link",    QString{"http://127.0.0.1:50001/%0"}.arg(imageFilename)},
+                    {"Link",    QString{"http://127.0.0.1:50001/charts/line/img/%0"}.arg(uuid)},
                     {"Message", "The provided url will expire in 24 hours."}
                 }
             };
@@ -410,7 +407,7 @@ int main(int argc, char *argv[])
     {
         Q_UNUSED(request)
 
-        return QtConcurrent::run([&]()
+        return QtConcurrent::run([]()
         {
             return QHttpServerResponse
             {
@@ -422,8 +419,69 @@ int main(int argc, char *argv[])
         });
     });
 
-    if (httpServer->listen(QHostAddress::AnyIPv4, static_cast<quint16>(port)) == 0)
-        commandlineParser.showHelp(-100);
+    httpServer->route("/charts/line/result/<arg>", QHttpServerRequest::Method::Get     |
+                                                   QHttpServerRequest::Method::Put     |
+                                                   QHttpServerRequest::Method::Head    |
+                                                   QHttpServerRequest::Method::Trace   |
+                                                   QHttpServerRequest::Method::Patch   |
+                                                   QHttpServerRequest::Method::Delete  |
+                                                   QHttpServerRequest::Method::Options |
+                                                   QHttpServerRequest::Method::Connect |
+                                                   QHttpServerRequest::Method::Unknown,
+    [](const QString &argument) -> QFuture<QHttpServerResponse>
+    {
+        static std::function<QHttpServerResponse(const QString &)> responseFunction = [](const QString &argument)
+        {
+            //see, if it is a correct uuid
+            const QUuid uuid {QUuid::fromString(argument)};
 
+            if (uuid.isNull())
+                return QHttpServerResponse
+                {
+                    QJsonObject
+                    {
+                        {"Message", "The submitted argument is not an UUID. Please send a valid UUID."}
+                    }
+                };
+
+            if (!QFile::exists(imagepath + QDir::separator() + uuid.toString(QUuid::StringFormat::WithoutBraces) + ".png"))
+                return QHttpServerResponse
+                {
+                    QJsonObject
+                    {
+                        {"Message", "The submitted UUID is either not linked to any chart or already expired. Please contact our support via our e-mail %0 ."}
+                    }
+                };
+
+            QFile imageFile {imagepath + QDir::separator() + uuid.toString(QUuid::StringFormat::WithoutBraces) + ".png"};
+
+            if (!imageFile.open(QFile::OpenModeFlag::ReadOnly))
+                return QHttpServerResponse
+                {
+                    QJsonObject
+                    {
+                        {"Message", "An internal error (errorcode 100) has occured. Please contact our support via our e-mail %0 ."}
+                    }
+                };
+
+            const QByteArray imageFileBytes {imageFile.readAll()};
+
+            return QHttpServerResponse
+            {
+                QJsonObject
+                {
+                    {"Message", "The 'Data' entry of this JSON-object contains the base64-encoded png-file data of your chart-plot."},
+                    {"Data",    QString{QString{imageFileBytes.toBase64()}.toUtf8()}}
+                }
+            };
+        };
+
+        return QtConcurrent::run(responseFunction, argument);
+    });
+
+    if (httpServer->listen(QHostAddress::Any, static_cast<quint16>(port)) == 0)
+        commandlineParser.showHelp(-99);
+
+    qDebug() << QCoreApplication::applicationName() << " is running on port: " << port;
     return app.exec();
 }
