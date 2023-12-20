@@ -28,46 +28,12 @@
 
 #include <functional>
 
+#include "CommonUtilities/CommonUtilities.h"
+
 static const quint64 LOWEST_PORT {49152}, HIGHEST_PORT {65535};
 
-static QColor generateRandomQColor()
-{
-    return QColor
-    {
-        static_cast<quint8>(QRandomGenerator::global()->generate() % 255),
-        static_cast<quint8>(QRandomGenerator::global()->generate() % 255),
-        static_cast<quint8>(QRandomGenerator::global()->generate() % 255)
-    };
-};
-
-static QVector<QPointF> mergeCoordinates(const QVector<qreal> &xPoints, const QVector<qreal> &yPoints)
-{
-    QVector<QPointF> points;
-
-    for (const qreal &x : xPoints)
-        points << QPointF {x, 0};
-
-    QVector<qreal> y {yPoints};
-    std::reverse(y.begin(), y.end());
-
-    for (QPointF &point : points)
-    {
-        if (!y.isEmpty())
-            point.setY(y.takeLast());
-    }
-
-    return points;
-};
-
-static QVector<qreal> convertFromArrayToRealsVector(const QJsonArray &jsonArray)
-{
-    QVector<qreal> points;
-
-    for (const QJsonValueConstRef jsonValueRef : jsonArray)
-        points << jsonValueRef.toVariant().toReal();
-
-    return points;
-};
+static const QString PORT_KEY      {"server/port"};
+static const QString IMAGEPATH_KEY {"main/imagepath"};
 
 int main(int argc, char *argv[])
 {
@@ -87,18 +53,18 @@ int main(int argc, char *argv[])
 
     const QSettings settings {QApplication::applicationDirPath() + QDir::separator() + "settings.ini", QSettings::Format::IniFormat, &app};
 
-    if (!settings.allKeys().contains("server/port"))
+    if (!settings.allKeys().contains(PORT_KEY))
         commandlineParser.showHelp(-101);
 
-    const quint64 port {settings.value(QString{"server/port"}).toULongLong()};
+    const quint64 port {settings.value(PORT_KEY).toULongLong()};
 
     if (port > HIGHEST_PORT || port < LOWEST_PORT)
         commandlineParser.showHelp(-102);
 
-    if (!settings.allKeys().contains("main/imagepath"))
+    if (!settings.allKeys().contains(IMAGEPATH_KEY))
         commandlineParser.showHelp(-103);
 
-    static const QString imagepath {settings.value(QString{"main/imagepath"}).toString()};
+    static const QString imagepath {settings.value(IMAGEPATH_KEY).toString()};
 
     if (imagepath.isEmpty())
         commandlineParser.showHelp(-104);
@@ -111,7 +77,7 @@ int main(int argc, char *argv[])
 
     const QScopedPointer<QHttpServer> httpServer {new QHttpServer {&app}};
 
-    httpServer->route("/charts/line", QHttpServerRequest::Method::Post,
+    httpServer->route("/line", QHttpServerRequest::Method::Post,
     [](const QHttpServerRequest &request) -> QFuture<QHttpServerResponse>
     {
         return QtConcurrent::run([&]()
@@ -382,22 +348,22 @@ int main(int argc, char *argv[])
             {
                 QJsonObject
                 {
-                    {"Link",    QString{"http://127.0.0.1:50001/charts/line/img/%0"}.arg(uuid)},
+                    {"Link",    QString{"http://127.0.0.1:50001/line/result/%0"}.arg(uuid)},
                     {"Message", "The provided url will expire in 24 hours."}
                 }
             };
         });
     });
 
-    httpServer->route("/charts/line", QHttpServerRequest::Method::Get     |
-                                      QHttpServerRequest::Method::Put     |
-                                      QHttpServerRequest::Method::Head    |
-                                      QHttpServerRequest::Method::Trace   |
-                                      QHttpServerRequest::Method::Patch   |
-                                      QHttpServerRequest::Method::Delete  |
-                                      QHttpServerRequest::Method::Options |
-                                      QHttpServerRequest::Method::Connect |
-                                      QHttpServerRequest::Method::Unknown,
+    httpServer->route("/line", QHttpServerRequest::Method::Get     |
+                               QHttpServerRequest::Method::Put     |
+                               QHttpServerRequest::Method::Head    |
+                               QHttpServerRequest::Method::Trace   |
+                               QHttpServerRequest::Method::Patch   |
+                               QHttpServerRequest::Method::Delete  |
+                               QHttpServerRequest::Method::Options |
+                               QHttpServerRequest::Method::Connect |
+                               QHttpServerRequest::Method::Unknown,
     [](const QHttpServerRequest &request) -> QFuture<QHttpServerResponse>
     {
         Q_UNUSED(request)
@@ -414,15 +380,15 @@ int main(int argc, char *argv[])
         });
     });
 
-    httpServer->route("/charts/line/result/<arg>", QHttpServerRequest::Method::Get     |
-                                                   QHttpServerRequest::Method::Put     |
-                                                   QHttpServerRequest::Method::Head    |
-                                                   QHttpServerRequest::Method::Trace   |
-                                                   QHttpServerRequest::Method::Patch   |
-                                                   QHttpServerRequest::Method::Delete  |
-                                                   QHttpServerRequest::Method::Options |
-                                                   QHttpServerRequest::Method::Connect |
-                                                   QHttpServerRequest::Method::Unknown,
+    httpServer->route("/line/result/<arg>", QHttpServerRequest::Method::Get     |
+                                            QHttpServerRequest::Method::Put     |
+                                            QHttpServerRequest::Method::Head    |
+                                            QHttpServerRequest::Method::Trace   |
+                                            QHttpServerRequest::Method::Patch   |
+                                            QHttpServerRequest::Method::Delete  |
+                                            QHttpServerRequest::Method::Options |
+                                            QHttpServerRequest::Method::Connect |
+                                            QHttpServerRequest::Method::Unknown,
     [](const QString &argument) -> QFuture<QHttpServerResponse>
     {
         static std::function<QHttpServerResponse(const QString &)> responseFunction = [](const QString &argument)
@@ -461,6 +427,15 @@ int main(int argc, char *argv[])
 
             const QByteArray imageFileBytes {imageFile.readAll()};
 
+            if (imageFileBytes.isEmpty())
+                return QHttpServerResponse
+                {
+                    QJsonObject
+                    {
+                        {"Message", "An internal error (errorcode 101) has occured. Please contact our support via our e-mail %0 ."}
+                    }
+                };
+
             return QHttpServerResponse
             {
                 QJsonObject
@@ -474,7 +449,24 @@ int main(int argc, char *argv[])
         return QtConcurrent::run(responseFunction, argument);
     });
 
-    if (httpServer->listen(QHostAddress::Any, static_cast<quint16>(port)) == 0)
+    httpServer->route("/ping", QHttpServerRequest::Method::Get,
+    [](const QHttpServerRequest &request) -> QFuture<QHttpServerResponse>
+    {
+        Q_UNUSED(request)
+
+        return QtConcurrent::run([]()
+        {
+            return QHttpServerResponse
+            {
+                QJsonObject
+                {
+                    {"Message", "Pong."}
+                }
+            };
+        });
+    });
+
+    if (httpServer->listen(QHostAddress::LocalHost, static_cast<quint16>(port)) == 0)
         commandlineParser.showHelp(-99);
 
     qDebug() << QCoreApplication::applicationName() << " is running on port: " << port;
