@@ -79,12 +79,7 @@ int main(int argc, char *argv[])
     QCommandLineParser commandlineParser;
     commandlineParser.addHelpOption();
     commandlineParser.addVersionOption();
-
-    commandlineParser.setApplicationDescription(QString
-    {
-        "Microservice for LineChart-Plotting."
-    });
-
+    commandlineParser.setApplicationDescription("Microservice for LineChart-Plotting.");
     commandlineParser.process(app);
 
     if (!QFile::exists(QApplication::applicationDirPath() + QDir::separator() + "settings.ini"))
