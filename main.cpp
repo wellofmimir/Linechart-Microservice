@@ -30,11 +30,6 @@
 
 #include "CommonUtilities/CommonUtilities.h"
 
-static const quint64 LOWEST_PORT {49152}, HIGHEST_PORT {65535};
-
-static const QString PORT_KEY      {"server/port"};
-static const QString IMAGEPATH_KEY {"main/imagepath"};
-
 int main(int argc, char *argv[])
 {
     QApplication app {argc, argv};
@@ -449,7 +444,7 @@ int main(int argc, char *argv[])
         return QtConcurrent::run(responseFunction, argument);
     });
 
-    httpServer->route("/ping", QHttpServerRequest::Method::Get,
+    httpServer->route("/line/ping", QHttpServerRequest::Method::Get,
     [](const QHttpServerRequest &request) -> QFuture<QHttpServerResponse>
     {
         Q_UNUSED(request)
