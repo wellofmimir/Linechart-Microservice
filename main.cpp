@@ -144,9 +144,6 @@ int main(int argc, char *argv[])
                     }
                 };
 
-            const qreal xStart {jsonObject.value("X_Start").toDouble()};
-            const qreal xEnd   {jsonObject.value("X_End").toDouble()};
-
             const QJsonArray jsonArray {jsonObject.value("Points").toArray()};
 
             if (jsonArray.isEmpty())
@@ -183,7 +180,7 @@ int main(int argc, char *argv[])
                     {
                         QJsonObject
                         {
-                            {"Message", "Invalid data sent. A sub-object in array 'Y_Points' is not a proper JSON-object. Please send a valid JSON-Object."}
+                            {"Message", "Invalid data sent. A sub-object in array 'Points' is not a proper JSON-object. Please send a valid JSON-Object."}
                         }
                     };
 
@@ -228,6 +225,9 @@ int main(int argc, char *argv[])
                         };
                 }
             }
+
+            const qreal xStart {jsonObject.value("X_Start").toDouble()};
+            const qreal xEnd   {jsonObject.value("X_End").toDouble()};
 
             const QVector<QJsonObject> pointsObjects = [](const QJsonArray &pointsArray) -> QVector<QJsonObject>
             {
@@ -304,6 +304,9 @@ int main(int argc, char *argv[])
             const QScopedPointer<QChart>      chart       {new QChart};
             const QScopedPointer<QGridLayout> gridLayout  {new QGridLayout};
 
+            /* die axisX und axisY dürfen nicht deleted werden,
+               da das Chart-Objekt hierfür die Ownership übernimmt */
+
             QValueAxis * const axisX {new QValueAxis};
             axisX->setRange(xStart, xEnd);
             axisX->setTickCount(static_cast<int>(axisX->max() + 1));
@@ -317,6 +320,9 @@ int main(int argc, char *argv[])
             for (const QString &caption : captionToPoints.keys())
             {
                 const QVector<QPointF> coordinates {mergeCoordinates(captionToPoints.value(caption).first, captionToPoints.value(caption).second)};
+
+                /* der lineSeries-Pointer darf nicht deleted werden,
+                   da das Chart-Objekt hierfür die Ownership übernimmt */
 
                 QLineSeries * const lineSeries {new QLineSeries {chart.data()}};
                 lineSeries->append(coordinates);
@@ -333,7 +339,7 @@ int main(int argc, char *argv[])
             chartView->setRenderHint(QPainter::Antialiasing);
             gridLayout->addWidget(chartView.data(), 0, 0);
             chartWidget->setLayout(gridLayout.data());
-            chartWidget->resize(QSize{1024, 768});
+            chartWidget->resize({1024, 768});
 
             const QString uuid {QUuid::createUuid().toString(QUuid::StringFormat::WithoutBraces)};
             const QString imageFilename {uuid + ".png"};

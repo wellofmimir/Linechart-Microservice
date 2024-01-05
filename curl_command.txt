@@ -3,5 +3,5 @@ curl -X POST http://127.0.0.1:50001/line -d "{\"X_Start\":0,\"X_End\":10,\"Point
 
 
 
-curl -X POST http://127.0.0.1:50001/bar -d "{\"X_Start\":0,\"X_End\":10,\"Points\":[{\"Caption\":\"Patryk\",\"X_Points\":[1,2,3],\"Y_Points\":[10,0.7,5]},{\"Caption\":\"Test2\",\"X_Points\":[6,3,1],\"Y_Points\":[0,1,8]}]}"
+curl -X POST http://127.0.0.1:50001/bar/upwards -d "{\"Y_Start\":0,\"Y_End\":10,\"Points\":[{\"Caption\":\"Patryk\",\"Values\":[1,2]},{\"Caption\":\"Henni\",\"Values\":[5,9]}],\"Categories\":[\"January\",\"February\", \"March\"]}"
 
